@@ -1,0 +1,39 @@
+---
+title: "MCM G1 Nanoparticles PrestoBlue Assay"
+output: html_notebook
+---
+
+
+
+
+```{r setup}
+path <- "20230428_Nanoparticles_OD1_24h_reduced.txt"
+
+library(stringr)
+library(readr)
+```
+
+
+
+
+```{r}
+data <- read_file(path, locale = locale(encoding = "UTF-16LE"))
+
+blocks <- as.integer(str_match(data, "##BLOCKS= (\\d+)\\R")[2])
+
+plates <- data %>%
+  str_match_all("Plate:.*\\R[\t\\d]*\\R(\t[\\s\\d]*\\R)*~End")[[1]][,2] %>%
+  as.list(plates)
+
+names(plates) <- str_match_all(data, "Plate:\t(.*?)\t")[[1]][,2]
+
+plates <- 
+  lapply(plates, . %>% 
+           str_split_1("\\R") %>%
+           str_sub(start = 3, end = -2) %>%
+           read.delim(text = ., header = F, sep = "\t") %>%
+           as.matrix())
+
+plates[[1]]
+```
+
