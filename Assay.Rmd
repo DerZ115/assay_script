@@ -1,29 +1,28 @@
 ---
 title: "MCM G1 Nanoparticles PrestoBlue Assay"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
-
-
 
 
 ```{r setup}
 path <- "20230428_Nanoparticles_OD1_24h_reduced.txt"
 
+library(tidyverse)
 library(stringr)
 library(readr)
 ```
 
 
-
-
-```{r}
+```{r read_data}
 data <- read_file(path, locale = locale(encoding = "UTF-16LE"))
 
-blocks <- as.integer(str_match(data, "##BLOCKS= (\\d+)\\R")[2])
+# blocks <- as.integer(str_match(data, "##BLOCKS= (\\d+)\\R")[2])
 
-plates <- data %>%
-  str_match_all("Plate:.*\\R[\t\\d]*\\R(\t[\\s\\d]*\\R)*~End")[[1]][,2] %>%
-  as.list(plates)
+plates <- 
+  str_match_all(data, "Plate:.*\\R[\t\\d]*\\R(\t[\\s\\d]*\\R)*~End")[[1]][,2] %>%
+  as.list()
 
 names(plates) <- str_match_all(data, "Plate:\t(.*?)\t")[[1]][,2]
 
@@ -34,6 +33,10 @@ plates <-
            read.delim(text = ., header = F, sep = "\t") %>%
            as.matrix())
 
-plates[[1]]
+plates
+```
+
+```{r}
+
 ```
 
