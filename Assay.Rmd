@@ -10,9 +10,9 @@ output:
 path <- "20230428_Nanoparticles_OD1_24h_reduced.xls"
 
 library(tidyverse)
+library(magrittr)
 library(stringr)
 library(readr)
-library(ggplate)
 library(knitr)
 library(xlsx)
 ```
@@ -51,6 +51,7 @@ for (plate in names(plates)) {
     filter(Plate == plate) %>%
     ggplot(aes(x=Col, y=Row, fill=value)) + 
       geom_point(shape=21, size=12, stroke=1.5) +
+      geom_text(aes(label=formatC(value, format = "E", digits = 2)), size=2) +
       coord_fixed() + 
       scale_y_reverse(breaks = seq(8), 
                       labels = LETTERS[1:8], 
@@ -82,13 +83,13 @@ for (name in names(plates)) {
 ```{r}
 masks <- list()
 for (name in names(plates)) {
-  masks <- append(masks, list(read.xlsx("plate_mask.xlsx", sheetName = name, header = F)))
+  masks <- append(masks, list(read.xlsx("plate_mask_NPs.xlsx", sheetName = name, header = F)))
 }
 
 names(masks) <- names(plates)
 masks <- lapply(masks, . %>%
-                  mutate(across(everything(), na_if, "X")) %>%
-                  as.tibble() %>%
+                  mutate(across(everything(), ~ na_if(.x, "X"))) %>%
+                  as_tibble() %>%
                   rename_with(function(x) {as.character(seq(ncol(.)))}) %>%
                   add_column(Row = seq(nrow(.)), .before = "1") %>%
                   pivot_longer(!Row, names_to = "Col", names_transform = as.integer, values_to = "Type") %>%
@@ -109,11 +110,22 @@ data <- full_join(masks, data, by = c("Plate", "Well", "Row", "Col")) %>%
 
 ```{r}
 data %>% 
-  group_by(Plate, Type, Concentration) %>%
-  summarise(mean = mean(value), stdev = sd(value)) %>%
-  ungroup(Type, Concentration) %>%
-  mutate(mean = mean - mean[Type == "MB"]) %>%
-  filter(Type != "MB") %>%
-  mutate(mean = mean / mean[Type == "TB"], stdev = stdev / mean[Type == "TB"])
+  group_by(Plate) %T>%
+  {print(paste("Medium Blank:", 
+               round(mean(.$value[.$Type == "MB"])), 
+               "\U00B1",
+               round(sd(.$value[.$Type == "MB"]))))} %>% 
+  mutate(value = value - mean(value[Type == "MB"])) %>%
+  filter(Type != "MB") %T>%
+  {print(paste("Treatment Blank:", 
+               round(mean(.$value[.$Type == "TB"])), 
+               "\U00B1",
+               round(sd(.$value[.$Type == "TB"]))))} %>% 
+  mutate(value = value / mean(value[Type == "TB"])) %>%
+  filter(Type != "TB") %>%
+  ungroup() %>%
+  ggplot(aes(x=Concentration, y=value, group=Type, col=Type)) + 
+    geom_line(stat = "summary", fun = mean) + 
+    scale_x_log10()
 ```
 
