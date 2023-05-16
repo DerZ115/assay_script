@@ -7,18 +7,19 @@ output:
 
 
 ```{r setup}
-path <- "20230428_Nanoparticles_OD1_24h_reduced.txt"
+path <- "20230428_Nanoparticles_OD1_24h_reduced.xls"
 
 library(tidyverse)
 library(stringr)
 library(readr)
+library(ggplate)
+library(knitr)
+library(xlsx)
 ```
 
 
 ```{r read_data}
 data <- read_file(path, locale = locale(encoding = "UTF-16LE"))
-
-# blocks <- as.integer(str_match(data, "##BLOCKS= (\\d+)\\R")[2])
 
 plates <- 
   str_match_all(data, "Plate:.*\\R[\t\\d]*\\R(\t[\\s\\d]*\\R)*~End")[[1]][,2] %>%
@@ -31,12 +32,88 @@ plates <-
            str_split_1("\\R") %>%
            str_sub(start = 3, end = -2) %>%
            read.delim(text = ., header = F, sep = "\t") %>%
-           as.matrix())
+           as_tibble() %>%
+           rename_with(function(x) {as.character(seq(ncol(.)))}) %>%
+           add_column(Row = seq(nrow(.)), .before = "1") %>%
+           pivot_longer(!Row, names_to = "Col", names_transform = as.integer) %>%
+           add_column(Well = paste0(LETTERS[.$Row], as.character(.$Col)), .before = "Row")
+         )
 
-plates
+data <- bind_rows(plates, .id = "Plate")
 ```
+
 
 ```{r}
 
+limits <- c(min(data$value, na.rm=T), max(data$value, na.rm=T))
+for (plate in names(plates)) {
+  p <- data %>%
+    filter(Plate == plate) %>%
+    ggplot(aes(x=Col, y=Row, fill=value)) + 
+      geom_point(shape=21, size=12, stroke=1.5) +
+      coord_fixed() + 
+      scale_y_reverse(breaks = seq(8), 
+                      labels = LETTERS[1:8], 
+                      expand = expansion(add = 0.75)) + 
+      scale_x_continuous(breaks = seq(12), 
+                         expand = expansion(add = 0.75)) + 
+      scale_fill_continuous(limits = limits, type = "viridis") + 
+      labs(x = "", y = "") + 
+      ggtitle(plate) +
+      theme_bw() +
+      theme(panel.grid = element_blank(), axis.ticks = element_blank())
+    print(p)
+}
+
+```
+
+```{r}
+append <- F
+for (name in names(plates)) {
+  plate <- plates[[name]]
+  out <- matrix("X", ncol = plate$Col[nrow(plate)], nrow = plate$Row[nrow(plate)])
+  colnames(out) <- as.character(seq(12))
+  rownames(out) <- LETTERS[seq(8)]
+  write.xlsx(out, "plate_mask.xlsx", sheetName = name, col.names = F, row.names = F, append = append)
+  append <- T
+}
+```
+
+```{r}
+masks <- list()
+for (name in names(plates)) {
+  masks <- append(masks, list(read.xlsx("plate_mask.xlsx", sheetName = name, header = F)))
+}
+
+names(masks) <- names(plates)
+masks <- lapply(masks, . %>%
+                  mutate(across(everything(), na_if, "X")) %>%
+                  as.tibble() %>%
+                  rename_with(function(x) {as.character(seq(ncol(.)))}) %>%
+                  add_column(Row = seq(nrow(.)), .before = "1") %>%
+                  pivot_longer(!Row, names_to = "Col", names_transform = as.integer, values_to = "Type") %>%
+                  add_column(Well = paste0(LETTERS[.$Row], as.character(.$Col)), .before = "Row")
+                ) %>%
+  bind_rows(.id = "Plate")
+```
+
+```{r}
+data <- full_join(masks, data, by = c("Plate", "Well", "Row", "Col")) %>%
+  drop_na() %>%
+  separate_wider_regex(Type, 
+                       c(Type = "\\w*", "\\(", Concentration = "\\d*\\.?\\d*", "\\)"), 
+                       too_few = "align_start") %>%
+  mutate(Row = NULL, Col = NULL, Concentration = as.numeric(Concentration))
+```
+
+
+```{r}
+data %>% 
+  group_by(Plate, Type, Concentration) %>%
+  summarise(mean = mean(value), stdev = sd(value)) %>%
+  ungroup(Type, Concentration) %>%
+  mutate(mean = mean - mean[Type == "MB"]) %>%
+  filter(Type != "MB") %>%
+  mutate(mean = mean / mean[Type == "TB"], stdev = stdev / mean[Type == "TB"])
 ```
 
